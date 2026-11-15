@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import androidx.annotation.RequiresApi
+import com.facebook.react.views.view.ReactViewGroup
 import kotlin.math.ceil
 
 /** Records each host's backdrop from the RenderNodes of the views painted behind it, without running any view's draw code. */
@@ -35,6 +36,7 @@ internal class BehindSource private constructor(
   private val step = Matrix()
   private val hostRects = ArrayList<RectF>()
   private val childRect = RectF()
+  private val paintBounds = FloatArray(4)
   private val visibleRect = Rect()
   private val location = IntArray(2)
   private val decorLocation = IntArray(2)
@@ -132,9 +134,16 @@ internal class BehindSource private constructor(
     return true
   }
 
-  // Only a sibling that covers part of the host can reach its pixels, and skipping the rest keeps hwui's walk linear while hosts do not overlap each other.
+  // Only a sibling that paints over part of the host can reach its pixels, and skipping the rest keeps hwui's walk linear while hosts do not overlap each other.
   private fun overlapsHost(child: View, level: Int): Boolean {
-    childRect.set(0f, 0f, child.width.toFloat(), child.height.toFloat())
+    // React Native views draw overflowing children, which Fabric reports as the view's overflow inset.
+    val inset = (child as? ReactViewGroup)?.overflowInset
+    if (inset == null) {
+      childRect.set(0f, 0f, child.width.toFloat(), child.height.toFloat())
+    } else {
+      OverflowBounds.write(child.width, child.height, inset.left, inset.top, inset.right, inset.bottom, paintBounds)
+      childRect.set(paintBounds[0], paintBounds[1], paintBounds[2], paintBounds[3])
+    }
     val own = child.matrix
     if (!own.isIdentity) own.mapRect(childRect)
     child.animationMatrix?.mapRect(childRect)
